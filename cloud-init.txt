@@ -1,0 +1,61 @@
+#!/bin/bash
+# Update the system
+apt-get update -y
+
+# Install necessary packages
+apt-get install -y fuse3 wget
+
+# Import the Microsoft GPG key
+wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
+
+# Add the Microsoft package repository for Ubuntu 22.04
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" > /etc/apt/sources.list.d/microsoft-prod.list
+
+# Update the package list and install blobfuse2
+apt-get update -y
+apt-get install -y blobfuse2
+
+# Create directories for blobfuse2
+mkdir -p /mnt/blobfuse
+mkdir -p /mnt/resource/blobfusetmp
+chmod 777 /mnt/resource/blobfusetmp
+
+# Create the YAML configuration file for blobfuse2
+cat <<EOF > /etc/connection.yaml
+version: 2
+logging:
+  type: syslog
+  level: LOG_DEBUG
+components:
+  - libfuse
+  - file_cache
+  - azstorage
+libfuse:
+  mount-path: /mnt/blobfuse
+  allow-other: true
+file_cache:
+  path: /mnt/resource/blobfusetmp
+azstorage:
+  type: block
+  account-name: ${storage_account_name}
+  account-key: ${storage_account_key}
+  container: ${storage_container_name}
+EOF
+
+chmod 600 /etc/connection.yaml
+
+# Test the blobfuse2 mount command
+blobfuse2 mount /mnt/blobfuse --config-file=/etc/connection.yaml
+
+# Verify the mount
+if [ "$(ls -A /mnt/blobfuse)" ]; then
+  echo "Blobfuse2 mount successful."
+else
+  echo "Blobfuse2 mount failed."
+fi
+
+# Add the mount entry to /etc/fstab for persistence
+echo "blobfuse2 /mnt/blobfuse fuse3 defaults,_netdev,--config-file=/etc/connection.yaml,allow_other 0 0" >> /etc/fstab
+
+# Reboot the system to verify persistence
+reboot
